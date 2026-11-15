@@ -135,7 +135,7 @@
   .items li.claimed .chk{background:var(--sage);border-color:var(--sage)}
   .empty{padding:14px;text-align:center;color:var(--muted);background:#FBF1E3;border-radius:12px;font-size:.92rem}
   .addbar{display:grid;grid-template-columns:1fr;gap:8px;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}
-  @media (min-width:520px){.addbar{grid-template-columns:1fr auto auto}}
+  @media (min-width:520px){.addbar{grid-template-columns:1fr auto auto} #needForm{grid-template-columns:1fr auto auto} #needLabel{grid-column:1/-1}}
 
   .hostbar{background:#FFF1DC;border:1.5px solid #F2CF95;border-radius:14px;padding:12px;margin-top:14px}
   .hostbar h4{margin:0 0 6px;font-size:.85rem;letter-spacing:.06em;text-transform:uppercase;color:#94600F}
@@ -157,6 +157,31 @@
     padding:12px 18px;border-radius:14px;font-weight:700;z-index:60;transition:transform .3s,visibility .3s;visibility:hidden;max-width:90vw;text-align:center}
   .toast.show{transform:translateX(-50%) translateY(0);visibility:visible}
   .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+  /* ---------- need rows: amounts + contributions ---------- */
+  .items li.need{display:block;padding:10px 10px 10px 12px}
+  .need .top{display:flex;align-items:flex-start;gap:10px}
+  .need .top .chk{margin-top:2px}
+  .need .amt{display:inline-block;margin-left:6px;font-size:.74rem;font-weight:800;color:#94600F;background:#FBE7C7;border-radius:999px;padding:2px 8px;vertical-align:2px}
+  .contribs{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:4px}
+  .contribs li{display:flex;align-items:center;gap:6px;font-size:.84rem;font-weight:700;color:#5E7039;border:0;padding:0;background:none}
+  .contribs li .x{font-size:.9rem;padding:2px 6px}
+  .acts{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0 34px}
+  .items li.partial{border-style:solid;border-color:#F2CF95;background:#FFF8EC}
+  .items li.partial .chk{background:linear-gradient(90deg,var(--gold) 50%,transparent 50%);border-color:var(--gold)}
+  .items li.partial .contribs li{color:#94600F}
+  .tag{font-size:.72rem;font-weight:800;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:2px}
+  .tag.part{background:#FBE7C7;color:#94600F}
+  .hostico{border:0;background:transparent;color:#B9A08B;font-size:.95rem;padding:6px 6px;border-radius:8px;line-height:1}
+  .hostico:hover{color:var(--cranberry);background:#F7EADA}
+
+  .sheet .big{font-family:Fraunces,Georgia,serif;font-size:2.4rem;color:var(--cranberry);line-height:1}
+  .countrow{display:flex;gap:10px;margin:12px 0 4px}
+  .countrow div{flex:1;background:#FBF1E3;border-radius:14px;padding:10px;text-align:center}
+  .countrow span{display:block;font-size:.75rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .sheet .note{font-size:.88rem;background:#FFF1DC;border:1.5px solid #F2CF95;color:#7A4E0C;border-radius:12px;padding:10px 12px;margin:10px 0 0}
+  .flash{animation:flash 1.6s ease-out 1}
+  @keyframes flash{0%{box-shadow:0 0 0 0 rgba(217,105,43,.7)}100%{box-shadow:0 0 0 18px rgba(217,105,43,0)}}
 </style>
 </head>
 <body>
@@ -261,11 +286,13 @@
             <h4>Host tools</h4>
             <form class="addbar" id="needForm" style="border:0;margin:0;padding:0" autocomplete="off">
               <input type="text" id="needLabel" maxlength="80" placeholder="Add something we need…">
+              <input type="text" id="needQty" maxlength="60" placeholder="Amount (optional)">
               <select id="needCat" aria-label="Category"></select>
               <button class="btn alt" type="submit">Add</button>
             </form>
             <div class="row" style="margin-top:10px">
               <button class="btn ghost sm" type="button" id="seedBtn">Load starter list</button>
+              <span style="font-size:.82rem;color:#94600F">Tap ✎ on any item to set how much we need.</span>
             </div>
           </div>
         </div>
@@ -315,6 +342,49 @@
       <button class="btn" type="button" id="confirmYes">Yes</button>
     </div>
   </div>
+</div>
+
+<!-- "I'll bring it" reminder -->
+<div class="modal" id="allModal" role="dialog" aria-modal="true" aria-labelledby="allH">
+  <div class="sheet">
+    <h3 id="allH">You've got the <span id="allItem"></span>! 🦃</h3>
+    <p>Before you shop, check the guest list so there's enough for everyone.</p>
+    <div class="countrow">
+      <div><b class="big" id="allComing">0</b><span>Coming</span></div>
+      <div><b class="big" id="allMaybe">0</b><span>Maybe</span></div>
+    </div>
+    <p class="note" id="allNote" hidden></p>
+    <div class="row" style="justify-content:flex-end;margin-top:14px">
+      <button class="btn ghost" type="button" id="allSee">See guest list</button>
+      <button class="btn" type="button" id="allOk">Got it</button>
+    </div>
+  </div>
+</div>
+
+<!-- "I'll bring some" amount -->
+<div class="modal" id="someModal" role="dialog" aria-modal="true" aria-labelledby="someH">
+  <form class="sheet" id="someForm" autocomplete="off">
+    <h3 id="someH">How much <span id="someItem"></span>?</h3>
+    <p id="someHint">So others know how much is still needed.</p>
+    <input type="text" id="someQty" maxlength="60" placeholder="e.g. 1 pie, 2 dozen rolls, a 9x13 pan" required>
+    <div class="row" style="justify-content:flex-end;margin-top:14px">
+      <button class="btn ghost" type="button" id="someCancel">Cancel</button>
+      <button class="btn" type="submit" id="someSave">Save</button>
+    </div>
+  </form>
+</div>
+
+<!-- host: amount needed -->
+<div class="modal" id="qtyModal" role="dialog" aria-modal="true" aria-labelledby="qtyH">
+  <form class="sheet" id="qtyForm" autocomplete="off">
+    <h3 id="qtyH">How much do we need?</h3>
+    <p id="qtyItem"></p>
+    <input type="text" id="qtyInput" maxlength="60" placeholder="e.g. 2 dozen, serves 20 (leave blank to clear)">
+    <div class="row" style="justify-content:flex-end;margin-top:14px">
+      <button class="btn ghost" type="button" id="qtyCancel">Cancel</button>
+      <button class="btn" type="submit">Save</button>
+    </div>
+  </form>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -430,7 +500,13 @@ if (configured) {
     addItem(data){ return F.addDoc(F.collection(db,"items"), {...data, created:F.serverTimestamp()}) },
     addMany(list){ const b=F.writeBatch(db); list.forEach(d=>b.set(F.doc(F.collection(db,"items")),{...d,created:F.serverTimestamp()})); return b.commit() },
     updateItem(id,patch){ return F.updateDoc(F.doc(db,"items",id), patch) },
-    deleteItem(id){ return F.deleteDoc(F.doc(db,"items",id)) },
+    deleteItem(id, contribIds=[]){
+      const b=F.writeBatch(db); contribIds.forEach(c=>b.delete(F.doc(db,"contribs",c))); b.delete(F.doc(db,"items",id)); return b.commit()
+    },
+    onContribs(cb){ F.onSnapshot(F.collection(db,"contribs"), s=>cb(s.docs.map(d=>({id:d.id,...d.data()}))), fail) },
+    addContrib(data){ return F.addDoc(F.collection(db,"contribs"), {...data, uid:user.uid, created:F.serverTimestamp()}) },
+    updateContrib(id,patch){ return F.updateDoc(F.doc(db,"contribs",id), patch) },
+    deleteContrib(id){ return F.deleteDoc(F.doc(db,"contribs",id)) },
     async hostSignIn(){
       const p = new A.GoogleAuthProvider();
       try { await A.signInWithPopup(auth,p) } catch(e){ if (e.code==="auth/popup-blocked") return A.signInWithRedirect(auth,p); throw e; }
@@ -440,7 +516,7 @@ if (configured) {
 } else {
   // Preview mode: same API, data lives in memory only.
   $("#setupBanner").hidden = false;
-  const mem = { guests:new Map(), items:new Map() }; const L = { guests:[], items:[], auth:[] };
+  const mem = { guests:new Map(), items:new Map(), contribs:new Map() }; const L = { guests:[], items:[], contribs:[], auth:[] };
   let host = false, n = 0;
   const emit = k => L[k].forEach(cb=>cb([...mem[k].values()]));
   store = {
@@ -453,33 +529,56 @@ if (configured) {
     async addItem(d){ const id="i"+(++n); mem.items.set(id,{id,...d,created:Date.now()+n}); emit("items") },
     async addMany(list){ list.forEach(d=>{ const id="i"+(++n); mem.items.set(id,{id,...d,created:Date.now()+n}) }); emit("items") },
     async updateItem(id,p){ mem.items.set(id,{...mem.items.get(id),...p}); emit("items") },
-    async deleteItem(id){ mem.items.delete(id); emit("items") },
+    async deleteItem(id, contribIds=[]){ contribIds.forEach(c=>mem.contribs.delete(c)); mem.items.delete(id); emit("items"); emit("contribs") },
+    onContribs(cb){ L.contribs.push(cb); emit("contribs") },
+    async addContrib(d){ const id="c"+(++n); mem.contribs.set(id,{id,...d,uid:"preview-me",created:Date.now()+n}); emit("contribs") },
+    async updateContrib(id,p){ mem.contribs.set(id,{...mem.contribs.get(id),...p}); emit("contribs") },
+    async deleteContrib(id){ mem.contribs.delete(id); emit("contribs") },
     async hostSignIn(){ host = true; L.auth.forEach(f=>f()) },
     async hostSignOut(){ host = false; L.auth.forEach(f=>f()) }
   };
   // a little sample data so the preview isn't empty
   mem.guests.set("g1",{id:"g1",name:"Grandma June",status:"yes",size:2,owner:"x"});
   mem.guests.set("g2",{id:"g2",name:"The Millers",status:"maybe",size:4,owner:"x"});
-  STARTER.slice(0,8).forEach(([label,cat],i)=>{ const id="s"+i; mem.items.set(id,{id,label,cat,kind:"need",claimUid:i===0?"x":null,claimName:i===0?"Grandma June":null,owner:"host",ownerName:"Host",created:i}) });
+  STARTER.slice(0,8).forEach(([label,cat,qty],i)=>{ const id="s"+i; mem.items.set(id,{id,label,cat,qty:qty||"",kind:"need",claimUid:null,claimName:null,owner:"host",ownerName:"Host",created:i}) });
+  mem.contribs.set("c-a",{id:"c-a",itemId:"s0",uid:"x",name:"Grandma June",mode:"all",qty:"",created:1});
+  mem.contribs.set("c-b",{id:"c-b",itemId:"s2",uid:"y",name:"The Millers",mode:"some",qty:"1 big bowl",created:2});
   mem.items.set("e1",{id:"e1",label:"Deviled eggs",cat:"sides",kind:"extra",owner:"x",ownerName:"The Millers",claimUid:null,claimName:null,created:99});
 }
 
 /* ---------- state + render ---------- */
-let guests = [], items = [];
+let guests = [], items = [], contribs = [];
 let status = "yes", size = 1;
 
 function canEdit(owner){ return store.isHost || owner === store.uid }
+const contribsFor = id => contribs.filter(c=>c.itemId===id).sort((a,b)=>ms(a.created)-ms(b.created));
+// "full" = someone is bringing all/the rest; "partial" = only "some" pledges; "open" = nobody yet
+function needState(i){
+  const cs = contribsFor(i.id);
+  if (cs.some(c=>c.mode==="all")) return "full";
+  return cs.length ? "partial" : "open";
+}
+function headcount(){
+  return {
+    coming: guests.filter(g=>g.status==="yes").reduce((a,g)=>a+(g.size||1),0),
+    maybe:  guests.filter(g=>g.status==="maybe").reduce((a,g)=>a+(g.size||1),0)
+  };
+}
 
 function renderStats(){
-  const coming = guests.filter(g=>g.status==="yes").reduce((a,g)=>a+(g.size||1),0);
-  const maybe  = guests.filter(g=>g.status==="maybe").reduce((a,g)=>a+(g.size||1),0);
-  const needs = items.filter(i=>i.kind==="need"), done = needs.filter(i=>i.claimUid);
+  const { coming, maybe } = headcount();
+  const needs = items.filter(i=>i.kind==="need");
+  const st = needs.map(needState);
+  const full = st.filter(x=>x==="full").length, part = st.filter(x=>x==="partial").length, open = st.filter(x=>x==="open").length;
   $("#sComing").textContent = coming; $("#sMaybe").textContent = maybe;
-  $("#sDishes").textContent = `${done.length}/${needs.length}`;
-  $("#pBar").style.width = needs.length ? (done.length/needs.length*100)+"%" : "0";
+  $("#sDishes").textContent = `${full}/${needs.length}`;
+  $("#pBar").style.width = needs.length ? ((full + part*0.5)/needs.length*100)+"%" : "0";
+  const bits = [];
+  if (open) bits.push(`${open} still up for grabs`);
+  if (part) bits.push(`${part} partly covered`);
   $("#pText").textContent = !needs.length ? "Nothing on the list yet."
-    : done.length===needs.length ? "Everything's covered! 🎉 Feel free to add extras below."
-    : `${needs.length-done.length} still up for grabs`;
+    : full===needs.length ? "Everything's covered! 🎉 Feel free to add extras below."
+    : bits.join(" · ");
 }
 
 function renderGuests(){
@@ -502,20 +601,36 @@ function renderGuests(){
   $("#guestList").innerHTML = html || `<div class="empty" style="margin-top:14px">No RSVPs yet. Be the first! 🍁</div>`;
 }
 
-function itemRow(i){
-  const claimed = !!i.claimUid, mineClaim = i.claimUid === store.uid;
-  let action = "";
-  if (i.kind === "need"){
-    if (!claimed) action = `<button class="btn sm alt" data-claim="${esc(i.id)}">I'll bring it</button>`;
-    else if (mineClaim || store.isHost) action = `<button class="btn sm ghost" data-unclaim="${esc(i.id)}">${mineClaim?"Undo":"Unclaim"}</button>`;
+function extraRow(i){
+  const del = canEdit(i.owner) ? `<button class="x" data-del-item="${esc(i.id)}" aria-label="Delete ${esc(i.label)}">✕</button>` : "";
+  return `<li class="claimed"><span class="chk">✓</span><span class="lbl">${esc(i.label)}<small>from ${esc(i.ownerName)}${i.owner===store.uid?" (you)":""}</small></span>${del}</li>`;
+}
+
+function needRow(i){
+  const cs = contribsFor(i.id), state = needState(i);
+  const mine = cs.find(c=>c.uid===store.uid);
+  const hasSome = cs.some(c=>c.mode==="some");
+  const amt = i.qty ? `<span class="amt">Need: ${esc(i.qty)}</span>` : "";
+  const tag = state==="partial" ? `<span class="tag part">Partly covered</span>` : "";
+  const sub = state==="open" ? `<small>Needed</small>` : "";
+  const list = cs.length ? `<ul class="contribs">${cs.map(c=>{
+      const you = c.uid===store.uid ? " (you)" : "";
+      const what = c.mode==="all" ? (hasSome ? "is bringing the rest" : "is bringing it") : `is bringing ${esc(c.qty)}`;
+      const x = store.isHost && c.uid!==store.uid ? `<button class="x" data-del-contrib="${esc(c.id)}" aria-label="Remove ${esc(c.name)}'s pledge">✕</button>` : "";
+      return `<li>${c.mode==="all"?"✓":"＋"} ${esc(c.name)}${you} ${what}${x}</li>`;
+    }).join("")}</ul>` : "";
+  let acts = "";
+  if (mine){
+    if (mine.mode==="some") acts += `<button class="btn sm ghost" data-edit-contrib="${esc(mine.id)}">Change amount</button>`;
+    acts += `<button class="btn sm ghost" data-undo-contrib="${esc(mine.id)}">Undo</button>`;
+  } else if (state!=="full"){
+    acts += `<button class="btn sm alt" data-bring-all="${esc(i.id)}">${state==="partial"?"I'll bring the rest":"I'll bring it"}</button>`;
+    acts += `<button class="btn sm ghost" data-bring-some="${esc(i.id)}">I'll bring some</button>`;
   }
-  const del = (i.kind==="need" ? store.isHost : canEdit(i.owner))
-    ? `<button class="x" data-del-item="${esc(i.id)}" aria-label="Delete ${esc(i.label)}">✕</button>` : "";
-  const sub = i.kind==="need"
-    ? (claimed ? `${esc(i.claimName)} is bringing this${mineClaim?" (you)":""}` : "Needed")
-    : `from ${esc(i.ownerName)}${i.owner===store.uid?" (you)":""}`;
-  const done = i.kind==="extra" || claimed;
-  return `<li class="${done?"claimed":""}"><span class="chk">${done?"✓":""}</span><span class="lbl">${esc(i.label)}<small>${sub}</small></span>${action}${del}</li>`;
+  const host = store.isHost
+    ? `<button class="hostico" data-edit-qty="${esc(i.id)}" aria-label="Set amount for ${esc(i.label)}" title="Set amount needed">✎</button><button class="x" data-del-item="${esc(i.id)}" aria-label="Delete ${esc(i.label)}">✕</button>` : "";
+  const cls = state==="full" ? "claimed" : state==="partial" ? "partial" : "";
+  return `<li class="need ${cls}" data-row="${esc(i.id)}"><div class="top"><span class="chk">${state==="full"?"✓":""}</span><span class="lbl">${esc(i.label)}${amt}${tag}${sub}${list}</span>${host}</div>${acts?`<div class="acts">${acts}</div>`:""}</li>`;
 }
 
 function renderItems(){
@@ -524,8 +639,9 @@ function renderItems(){
     for (const [k] of CATS){
       const l = list.filter(i=>(CAT[i.cat]?k===i.cat:k==="other")).sort((a,b)=>ms(a.created)-ms(b.created));
       if (!l.length) continue;
-      const open = l.filter(i=>i.kind==="need" && !i.claimUid).length;
-      html += `<div class="cat"><h3>${CAT[k].e} ${CAT[k].n}${l[0].kind==="need"?` <span class="n">${open?open+" open":"all set"}</span>`:""}</h3><ul class="items">${l.map(itemRow).join("")}</ul></div>`;
+      const isNeed = l[0].kind==="need";
+      const open = isNeed ? l.filter(i=>needState(i)!=="full").length : 0;
+      html += `<div class="cat"><h3>${CAT[k].e} ${CAT[k].n}${isNeed?` <span class="n">${open?open+" open":"all set"}</span>`:""}</h3><ul class="items">${l.map(isNeed?needRow:extraRow).join("")}</ul></div>`;
     }
     return html;
   };
@@ -584,7 +700,8 @@ $("#extraForm").addEventListener("submit", async e=>{
 
 $("#needForm").addEventListener("submit", async e=>{
   e.preventDefault(); const label=$("#needLabel").value.trim(); if(!label) return;
-  try { await store.addItem({label,cat:$("#needCat").value,kind:"need",owner:store.uid,ownerName:"Host",claimUid:null,claimName:null}); $("#needLabel").value=""; } catch(err){ fail(err) }
+  const qty=$("#needQty").value.trim();
+  try { await store.addItem({label,qty,cat:$("#needCat").value,kind:"need",owner:store.uid,ownerName:"Host",claimUid:null,claimName:null}); $("#needLabel").value=""; $("#needQty").value=""; } catch(err){ fail(err) }
 });
 
 $("#seedBtn").onclick = async ()=>{
@@ -592,23 +709,100 @@ $("#seedBtn").onclick = async ()=>{
   const add = STARTER.filter(([l])=>!have.has(l.toLowerCase()));
   if (!add.length) return toast("Starter list is already loaded.");
   if (!await confirmSheet(`Add ${add.length} classic Thanksgiving items to the list? You can delete any you don't want.`,"Add them")) return;
-  try { await store.addMany(add.map(([label,cat])=>({label,cat,kind:"need",owner:store.uid,ownerName:"Host",claimUid:null,claimName:null}))); toast("Starter list added 🍂"); } catch(err){ fail(err) }
+  try { await store.addMany(add.map(([label,cat])=>({label,qty:"",cat,kind:"need",owner:store.uid,ownerName:"Host",claimUid:null,claimName:null}))); toast("Starter list added 🍂"); } catch(err){ fail(err) }
 };
+
+/* ---------- sheets ---------- */
+function openSheet(id){ $(id).classList.add("open"); }
+function closeSheet(id){ $(id).classList.remove("open"); }
+
+// "I'll bring it" → headcount reminder
+function showAllReminder(item, isRest){
+  const { coming, maybe } = headcount();
+  $("#allItem").textContent = item.label.toLowerCase();
+  $("#allComing").textContent = coming; $("#allMaybe").textContent = maybe;
+  const notes = [];
+  if (item.qty) notes.push(`The host suggests about ${item.qty}.`);
+  const others = contribsFor(item.id).filter(c=>c.mode==="some" && c.uid!==store.uid);
+  if (isRest && others.length) notes.push(`Already coming: ${others.map(c=>`${c.qty} from ${c.name}`).join(", ")}, so you're covering the rest.`);
+  if (!coming && !maybe) notes.push("Nobody has RSVP'd yet, so check back closer to the day.");
+  $("#allNote").hidden = !notes.length; $("#allNote").textContent = notes.join(" ");
+  openSheet("#allModal");
+}
+$("#allOk").onclick = ()=>closeSheet("#allModal");
+$("#allSee").onclick = ()=>{
+  closeSheet("#allModal");
+  const el = $("#guestList").closest(".card"); el.scrollIntoView({behavior:"smooth", block:"start"});
+  el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+};
+
+// "I'll bring some" → ask how much
+let someCtx = null;
+function askSome(item, existing){
+  someCtx = { item, existing };
+  $("#someItem").textContent = `${item.label.toLowerCase()} are you bringing`;
+  const cs = contribsFor(item.id).filter(c=>c.uid!==store.uid);
+  const parts = [];
+  if (item.qty) parts.push(`We need about ${item.qty}.`);
+  if (cs.length) parts.push(`Already pledged: ${cs.map(c=>c.mode==="all"?`the rest from ${c.name}`:`${c.qty} from ${c.name}`).join(", ")}.`);
+  $("#someHint").textContent = parts.length ? parts.join(" ") : "So others know how much is still needed.";
+  $("#someQty").value = existing?.qty || "";
+  $("#someSave").textContent = existing ? "Update" : "Save";
+  openSheet("#someModal"); setTimeout(()=>$("#someQty").focus(),50);
+}
+$("#someCancel").onclick = ()=>{ closeSheet("#someModal"); someCtx=null; };
+$("#someForm").addEventListener("submit", async e=>{
+  e.preventDefault(); const qty=$("#someQty").value.trim(); if(!qty || !someCtx) return;
+  const { item, existing } = someCtx; closeSheet("#someModal"); someCtx=null;
+  try {
+    if (existing) await store.updateContrib(existing.id,{qty});
+    else await store.addContrib({itemId:item.id,name:myName,mode:"some",qty});
+    toast(`Thanks! Put you down for ${qty}. 🙌`);
+  } catch(err){ fail(err) }
+});
+
+// host: amount needed
+let qtyCtx = null;
+$("#qtyCancel").onclick = ()=>{ closeSheet("#qtyModal"); qtyCtx=null; };
+$("#qtyForm").addEventListener("submit", async e=>{
+  e.preventDefault(); if(!qtyCtx) return; const id=qtyCtx; qtyCtx=null; closeSheet("#qtyModal");
+  try { await store.updateItem(id,{qty:$("#qtyInput").value.trim()}); } catch(err){ fail(err) }
+});
 
 document.addEventListener("click", async e=>{
   const t = e.target.closest("button"); if(!t) return;
+  const d = t.dataset;
   try {
-    if (t.dataset.claim){
+    if (d.bringAll){
+      const item = items.find(i=>i.id===d.bringAll); if(!item) return;
+      if (contribsFor(item.id).some(c=>c.mode==="all")) return toast("Someone just grabbed that one!");
       const name = await needName(); if(!name) return;
-      await store.updateItem(t.dataset.claim,{claimUid:store.uid,claimName:name}); toast("You're on it! 🙌");
-    } else if (t.dataset.unclaim){
-      await store.updateItem(t.dataset.unclaim,{claimUid:null,claimName:null});
-    } else if (t.dataset.delItem){
-      const it = items.find(i=>i.id===t.dataset.delItem);
-      if (await confirmSheet(`Remove “${it?.label}”?`,"Remove")) await store.deleteItem(t.dataset.delItem);
-    } else if (t.dataset.delGuest){
-      const g = guests.find(x=>x.id===t.dataset.delGuest);
-      if (await confirmSheet(`Remove ${g?.name}'s RSVP?`,"Remove")) await store.deleteGuest(t.dataset.delGuest);
+      const isRest = needState(item)==="partial";
+      await store.addContrib({itemId:item.id,name,mode:"all",qty:""});
+      showAllReminder(item, isRest);
+    } else if (d.bringSome){
+      const item = items.find(i=>i.id===d.bringSome); if(!item) return;
+      const name = await needName(); if(!name) return;
+      askSome(item, null);
+    } else if (d.editContrib){
+      const c = contribs.find(x=>x.id===d.editContrib); const item = c && items.find(i=>i.id===c.itemId);
+      if (item) askSome(item, c);
+    } else if (d.undoContrib){
+      await store.deleteContrib(d.undoContrib);
+    } else if (d.delContrib){
+      const c = contribs.find(x=>x.id===d.delContrib);
+      if (await confirmSheet(`Remove ${c?.name}'s pledge?`,"Remove")) await store.deleteContrib(d.delContrib);
+    } else if (d.editQty){
+      const item = items.find(i=>i.id===d.editQty); if(!item) return;
+      qtyCtx = item.id; $("#qtyItem").textContent = item.label; $("#qtyInput").value = item.qty || "";
+      openSheet("#qtyModal"); setTimeout(()=>$("#qtyInput").focus(),50);
+    } else if (d.delItem){
+      const it = items.find(i=>i.id===d.delItem);
+      const cs = it?.kind==="need" ? contribsFor(it.id).map(c=>c.id) : [];
+      if (await confirmSheet(`Remove “${it?.label}”${cs.length?` and its ${cs.length} pledge${cs.length>1?"s":""}`:""}?`,"Remove")) await store.deleteItem(d.delItem, cs);
+    } else if (d.delGuest){
+      const g = guests.find(x=>x.id===d.delGuest);
+      if (await confirmSheet(`Remove ${g?.name}'s RSVP?`,"Remove")) await store.deleteGuest(d.delGuest);
     }
   } catch(err){ fail(err) }
 });
@@ -619,6 +813,7 @@ store.onAuth(()=>{
     subscribed = true;
     store.onGuests(list=>{ guests=list; renderGuests(); renderStats(); });
     store.onItems(list=>{ items=list; renderItems(); });
+    store.onContribs(list=>{ contribs=list; renderItems(); });
   }
   const mine = guests.find(g=>g.id===store.uid);
   if (mine){ status=mine.status; setSize(mine.size||1); }
