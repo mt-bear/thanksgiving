@@ -537,7 +537,7 @@ $("#nameCancel").onclick=()=>{ $("#nameModal").classList.remove("open"); nameRes
 function paintName(){
   const a = active(), n = myHH().length;
   $("#youName").textContent = a ? a.name : "a guest";
-  $("#changeName").textContent = !a ? "Set name" : n>1 ? "Switch" : "Change";
+  $("#changeName").textContent = !a ? "Set name" : n>1 ? "Switch" : "Edit";
   $("#hhWrap").hidden = n < 2;
   $("#hhBar").innerHTML = myHH().map(g=>`<button type="button" class="hhchip" data-act-as="${esc(g.id)}" aria-pressed="${a&&g.id===a.id}">${esc(g.name)}</button>`).join("")
     + `<button type="button" class="hhchip add" data-add-hh="1">+ Another household</button>`;
@@ -565,7 +565,6 @@ function paintHHList(){
 }
 $("#changeName").onclick = async ()=>{
   if (!myHH().length) return ensureActive();
-  if (myHH().length === 1) return openNameSheet("rename", myHH()[0]);
   paintHHList(); $("#hhModal").classList.add("open");
 };
 $("#hhDone").onclick = ()=>$("#hhModal").classList.remove("open");
