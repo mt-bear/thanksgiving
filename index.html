@@ -181,6 +181,19 @@
   .countrow span{display:block;font-size:.75rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
   .sheet .note{font-size:.88rem;background:#FFF1DC;border:1.5px solid #F2CF95;color:#7A4E0C;border-radius:12px;padding:10px 12px;margin:10px 0 0}
   .flash{animation:flash 1.6s ease-out 1}
+
+  /* ---------- households ---------- */
+  .hhbar{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 6px}
+  .hhchip{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font-weight:800;font-size:.85rem;color:var(--muted)}
+  .hhchip[aria-pressed=true]{background:var(--cranberry);border-color:var(--cranberry);color:#FFF6E9}
+  .hhchip.add{border-style:dashed;color:var(--cranberry)}
+  .hhnote{font-size:.8rem;color:var(--muted);margin:0 0 4px}
+  .hhlist{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px}
+  .hhlist li{display:flex;align-items:center;gap:8px;padding:10px;border-radius:12px;background:#FBF1E3}
+  .hhlist li.on{background:#F6F9EE;outline:2px solid #DCE5C9}
+  .hhlist .nm{flex:1;min-width:0;font-weight:800}
+  .hhlist .nm small{display:block;font-weight:600;color:var(--muted);font-size:.78rem}
+  .glist .me{border:0;background:none;padding:0;font:inherit;color:var(--cranberry);font-weight:800;font-size:.78rem;text-decoration:underline;cursor:pointer}
   @keyframes flash{0%{box-shadow:0 0 0 0 rgba(217,105,43,.7)}100%{box-shadow:0 0 0 18px rgba(217,105,43,0)}}
 </style>
 </head>
@@ -248,8 +261,13 @@
     <section class="card" aria-labelledby="rsvpH">
       <div class="card-h"><span class="ico">🍂</span><div><h2 id="rsvpH">RSVP</h2><p>One per household is perfect.</p></div></div>
       <div class="card-b">
+        <div id="hhWrap" hidden>
+          <label class="f" style="margin-top:4px">RSVPing for</label>
+          <div class="hhbar" id="hhBar"></div>
+          <p class="hhnote">Adding for family who aren't in the group chat? Tap <b>+ Another household</b>. You can switch between them anytime from this phone.</p>
+        </div>
         <form id="rsvpForm" autocomplete="off">
-          <label class="f" for="rsvpName">Your name (or household)</label>
+          <label class="f" for="rsvpName">Name (or household)</label>
           <input type="text" id="rsvpName" maxlength="60" placeholder="e.g. Aunt Linda & Bob" required>
           <label class="f">Are you coming?</label>
           <div class="seg" role="group" aria-label="RSVP status">
@@ -269,6 +287,7 @@
             <button class="btn" type="submit" id="rsvpBtn" style="align-self:flex-end">Save RSVP</button>
           </div>
         </form>
+        <button class="btn ghost sm" type="button" id="addHHBtn" style="margin-top:10px">+ RSVP for another household</button>
         <div id="guestList"></div>
       </div>
     </section>
@@ -323,13 +342,26 @@
 <div class="modal" id="nameModal" role="dialog" aria-modal="true" aria-labelledby="nameH">
   <form class="sheet" id="nameForm" autocomplete="off">
     <h3 id="nameH">Who's this? 🍁</h3>
-    <p>So everyone knows who's bringing what.</p>
+    <p id="nameP">So everyone knows who's bringing what.</p>
     <input type="text" id="nameInput" maxlength="60" placeholder="Your name" required>
     <div class="row" style="justify-content:flex-end;margin-top:14px">
       <button class="btn ghost" type="button" id="nameCancel">Cancel</button>
       <button class="btn" type="submit">Save</button>
     </div>
   </form>
+</div>
+
+<!-- households managed from this device -->
+<div class="modal" id="hhModal" role="dialog" aria-modal="true" aria-labelledby="hhH">
+  <div class="sheet">
+    <h3 id="hhH">Your households</h3>
+    <p>Everything you add from this phone or browser stays editable here. Pick who you're acting for.</p>
+    <ul class="hhlist" id="hhList"></ul>
+    <div class="row" style="justify-content:space-between;margin-top:14px">
+      <button class="btn ghost" type="button" id="hhAdd">+ Another household</button>
+      <button class="btn" type="button" id="hhDone">Done</button>
+    </div>
+  </div>
 </div>
 
 <!-- confirm sheet (alerts/confirms aren't reliable in every browser) -->
@@ -450,24 +482,95 @@ function confirmSheet(text, yes="Yes"){
   });
 }
 
-/* ---------- name ---------- */
-let myName = ls.get("tg_name") || "";
-let nameResolver = null;
-function paintName(){ $("#youName").textContent = myName || "a guest"; $("#changeName").textContent = myName ? "Change" : "Set name"; if(!$("#rsvpName").value) $("#rsvpName").value = myName; }
-function askName(){
-  return new Promise(res=>{
-    nameResolver=res; $("#nameInput").value=myName; $("#nameModal").classList.add("open");
-    setTimeout(()=>$("#nameInput").focus(),50);
-  });
+/* ---------- households (all owned by this device) ---------- */
+// A "household" is a guests doc whose owner is this device. One device can manage several.
+// status "none" = household exists (so it can claim dishes) but hasn't RSVP'd yet.
+const legacyName = ls.get("tg_name") || "";
+let activeId = ls.get("tg_active") || "";
+const myHH = () => guests.filter(g=>g.owner===store.uid).sort((a,b)=>ms(a.created)-ms(b.created));
+const active = () => { const l=myHH(); return l.find(g=>g.id===activeId) || l[0] || null; };
+function setActive(id){ activeId=id; ls.set("tg_active",id); renderAll(); }
+// pledges/extras made before multi-household support have no hh field: attribute by name
+function hhOf(rec, ownerField){
+  if (rec.hh) return rec.hh;
+  if (rec[ownerField] !== store.uid) return null;
+  const l=myHH(), nm=rec.name ?? rec.ownerName;
+  return (l.find(g=>g.name===nm) || l[0] || {}).id || null;
 }
-async function needName(){ return myName || await askName(); }
-$("#nameForm").addEventListener("submit",e=>{
+const nameOfHH = (rec, fallback) => (rec.hh && guests.find(g=>g.id===rec.hh)?.name) || fallback;
+
+let nameResolver = null, nameMode = "add", nameTarget = null, formKey = null;
+function openNameSheet(mode, target){
+  nameMode = mode; nameTarget = target || null;
+  const first = !myHH().length;
+  $("#nameH").textContent = mode==="rename" ? "Rename household" : first ? "Who's this? 🍁" : "Add another household 🍁";
+  $("#nameP").textContent = mode==="rename" ? "This updates their name everywhere on the page."
+    : first ? "So everyone knows who's bringing what." : "For family who aren't in the group chat. You'll be able to RSVP and claim dishes for them from this phone.";
+  $("#nameInput").value = mode==="rename" ? target.name : (first ? legacyName : "");
+  $("#nameInput").placeholder = first ? "Your name" : "e.g. The Hendersons";
+  $("#nameModal").classList.add("open"); setTimeout(()=>$("#nameInput").focus(),50);
+  return new Promise(res=>{ nameResolver=res; });
+}
+async function addHousehold(name, data={}){
+  const id = await store.addGuest({name, status:"none", size:1, ...data});
+  ls.set("tg_name", name); setActive(id); return id;
+}
+// returns the active household, creating the first one if needed
+async function ensureActive(){
+  if (!store.uid){ toast("Connecting… try again in a sec."); return null; }
+  const a = active(); if (a) return a;
+  const name = await openNameSheet("add"); if (!name) return null;
+  return guests.find(g=>g.id===activeId) || { id:activeId, name };
+}
+$("#nameForm").addEventListener("submit", async e=>{
   e.preventDefault(); const v=$("#nameInput").value.trim(); if(!v) return;
-  myName=v; ls.set("tg_name",v); $("#rsvpName").value=v; paintName();
-  $("#nameModal").classList.remove("open"); nameResolver?.(v); nameResolver=null;
+  $("#nameModal").classList.remove("open");
+  const res = nameResolver; nameResolver=null;
+  try {
+    if (nameMode==="rename") await store.updateGuest(nameTarget.id,{name:v});
+    else await addHousehold(v);
+    res?.(v);
+  } catch(err){ fail(err); res?.(null); }
 });
 $("#nameCancel").onclick=()=>{ $("#nameModal").classList.remove("open"); nameResolver?.(null); nameResolver=null; };
-$("#changeName").onclick=()=>askName();
+
+function paintName(){
+  const a = active(), n = myHH().length;
+  $("#youName").textContent = a ? a.name : "a guest";
+  $("#changeName").textContent = !a ? "Set name" : n>1 ? "Switch" : "Change";
+  $("#hhWrap").hidden = n < 2;
+  $("#hhBar").innerHTML = myHH().map(g=>`<button type="button" class="hhchip" data-act-as="${esc(g.id)}" aria-pressed="${a&&g.id===a.id}">${esc(g.name)}</button>`).join("")
+    + `<button type="button" class="hhchip add" data-add-hh="1">+ Another household</button>`;
+  $("#addHHBtn").hidden = n >= 2;
+  // RSVP form shows the active household (only reset it when that household changes,
+  // so live updates from other people don't wipe what you're typing)
+  const key = a ? `${a.id}|${a.name}|${a.status}|${a.size}` : "none";
+  if (key !== formKey){
+    formKey = key;
+    $("#rsvpName").value = a ? a.name : (legacyName || "");
+    setStatus(a && a.status!=="none" ? a.status : "yes"); setSize(a?.size || 1);
+  }
+  $("#rsvpBtn").textContent = a && a.status!=="none" ? `Update RSVP` : "Save RSVP";
+  if ($("#hhModal").classList.contains("open")) paintHHList();
+}
+function paintHHList(){
+  const a = active();
+  const label = s => ({yes:"Coming",maybe:"Maybe",no:"Can't make it",none:"No RSVP yet"})[s] || "";
+  $("#hhList").innerHTML = myHH().map(g=>`<li class="${a&&g.id===a.id?"on":""}">
+      <span class="nm">${esc(g.name)}<small>${label(g.status)}${g.status==="yes"||g.status==="maybe"?` · party of ${g.size||1}`:""}${a&&g.id===a.id?" · acting as":""}</small></span>
+      ${a&&g.id===a.id?"":`<button class="btn sm alt" type="button" data-act-as="${esc(g.id)}">Act as</button>`}
+      <button class="hostico" type="button" data-rename-hh="${esc(g.id)}" aria-label="Rename ${esc(g.name)}">✎</button>
+      <button class="x" type="button" data-del-guest="${esc(g.id)}" aria-label="Remove ${esc(g.name)}">✕</button>
+    </li>`).join("") || `<li><span class="nm">No households yet<small>Add yourself first.</small></span></li>`;
+}
+$("#changeName").onclick = async ()=>{
+  if (!myHH().length) return ensureActive();
+  if (myHH().length === 1) return openNameSheet("rename", myHH()[0]);
+  paintHHList(); $("#hhModal").classList.add("open");
+};
+$("#hhDone").onclick = ()=>$("#hhModal").classList.remove("open");
+$("#hhAdd").onclick = async ()=>{ $("#hhModal").classList.remove("open"); await openNameSheet("add"); };
+$("#addHHBtn").onclick = async ()=>{ if (!myHH().length) { await ensureActive(); } await openNameSheet("add"); };
 
 /* ---------- store: Firebase, or in-memory preview ---------- */
 const configured = !Object.values(CONFIG.firebase).some(v=>String(v).includes("PASTE"));
@@ -495,8 +598,11 @@ if (configured) {
     onAuth(f){ listeners.auth.push(f) },
     onGuests(cb){ gUnsub?.(); gUnsub = F.onSnapshot(F.collection(db,"guests"), s=>cb(s.docs.map(d=>({id:d.id,...d.data()}))), fail) },
     onItems(cb){ iUnsub?.(); iUnsub = F.onSnapshot(F.collection(db,"items"), s=>cb(s.docs.map(d=>({id:d.id,...d.data()}))), fail) },
-    setGuest(data){ return F.setDoc(F.doc(db,"guests",user.uid), {...data, owner:user.uid, updated:F.serverTimestamp()}) },
-    deleteGuest(id){ return F.deleteDoc(F.doc(db,"guests",id)) },
+    async addGuest(data){ const ref=F.doc(F.collection(db,"guests")); await F.setDoc(ref,{...data, owner:user.uid, created:F.serverTimestamp(), updated:F.serverTimestamp()}); return ref.id },
+    updateGuest(id,patch){ return F.updateDoc(F.doc(db,"guests",id), {...patch, updated:F.serverTimestamp()}) },
+    deleteGuest(id, contribIds=[], itemIds=[]){
+      const b=F.writeBatch(db); contribIds.forEach(c=>b.delete(F.doc(db,"contribs",c))); itemIds.forEach(i=>b.delete(F.doc(db,"items",i))); b.delete(F.doc(db,"guests",id)); return b.commit()
+    },
     addItem(data){ return F.addDoc(F.collection(db,"items"), {...data, created:F.serverTimestamp()}) },
     addMany(list){ const b=F.writeBatch(db); list.forEach(d=>b.set(F.doc(F.collection(db,"items")),{...d,created:F.serverTimestamp()})); return b.commit() },
     updateItem(id,patch){ return F.updateDoc(F.doc(db,"items",id), patch) },
@@ -524,8 +630,9 @@ if (configured) {
     onAuth(f){ L.auth.push(f); setTimeout(f,0) },
     onGuests(cb){ L.guests.push(cb); emit("guests") },
     onItems(cb){ L.items.push(cb); emit("items") },
-    async setGuest(d){ mem.guests.set("preview-me",{id:"preview-me",...d,owner:"preview-me"}); emit("guests") },
-    async deleteGuest(id){ mem.guests.delete(id); emit("guests") },
+    async addGuest(d){ const id="h"+(++n); mem.guests.set(id,{id,...d,owner:"preview-me",created:Date.now()+n}); emit("guests"); return id },
+    async updateGuest(id,p){ mem.guests.set(id,{...mem.guests.get(id),...p}); emit("guests") },
+    async deleteGuest(id, cs=[], is=[]){ cs.forEach(c=>mem.contribs.delete(c)); is.forEach(i=>mem.items.delete(i)); mem.guests.delete(id); emit("guests"); emit("contribs"); emit("items") },
     async addItem(d){ const id="i"+(++n); mem.items.set(id,{id,...d,created:Date.now()+n}); emit("items") },
     async addMany(list){ list.forEach(d=>{ const id="i"+(++n); mem.items.set(id,{id,...d,created:Date.now()+n}) }); emit("items") },
     async updateItem(id,p){ mem.items.set(id,{...mem.items.get(id),...p}); emit("items") },
@@ -538,8 +645,8 @@ if (configured) {
     async hostSignOut(){ host = false; L.auth.forEach(f=>f()) }
   };
   // a little sample data so the preview isn't empty
-  mem.guests.set("g1",{id:"g1",name:"Grandma June",status:"yes",size:2,owner:"x"});
-  mem.guests.set("g2",{id:"g2",name:"The Millers",status:"maybe",size:4,owner:"x"});
+  mem.guests.set("g1",{id:"g1",name:"Grandma June",status:"yes",size:2,owner:"x",created:1});
+  mem.guests.set("g2",{id:"g2",name:"The Millers",status:"maybe",size:4,owner:"y",created:2});
   STARTER.slice(0,8).forEach(([label,cat,qty],i)=>{ const id="s"+i; mem.items.set(id,{id,label,cat,qty:qty||"",kind:"need",claimUid:null,claimName:null,owner:"host",ownerName:"Host",created:i}) });
   mem.contribs.set("c-a",{id:"c-a",itemId:"s0",uid:"x",name:"Grandma June",mode:"all",qty:"",created:1});
   mem.contribs.set("c-b",{id:"c-b",itemId:"s2",uid:"y",name:"The Millers",mode:"some",qty:"1 big bowl",created:2});
@@ -551,6 +658,7 @@ let guests = [], items = [], contribs = [];
 let status = "yes", size = 1;
 
 function canEdit(owner){ return store.isHost || owner === store.uid }
+const cn = c => nameOfHH(c, c.name);
 const contribsFor = id => contribs.filter(c=>c.itemId===id).sort((a,b)=>ms(a.created)-ms(b.created));
 // "full" = someone is bringing all/the rest; "partial" = only "some" pledges; "open" = nobody yet
 function needState(i){
@@ -582,8 +690,7 @@ function renderStats(){
 }
 
 function renderGuests(){
-  const mine = guests.find(g=>g.id===store.uid);
-  $("#rsvpBtn").textContent = mine ? "Update RSVP" : "Save RSVP";
+  const a = active();
   const groups = [["yes","Coming"],["maybe","Maybe"],["no","Can't make it"]];
   let html = "";
   for (const [k,t] of groups){
@@ -593,7 +700,7 @@ function renderGuests(){
     html += `<div class="group-t">${t} · ${ppl} ${ppl===1?"person":"people"}</div><ul class="glist">` + list.map(g=>`
       <li>
         <span class="av" style="background:${colorFor(g.name)}">${esc(initials(g.name))}</span>
-        <span class="nm">${esc(g.name)}${g.id===store.uid?' <small>that\'s you</small>':`<small>party of ${g.size||1}</small>`}</span>
+        <span class="nm">${esc(g.name)}<small>party of ${g.size||1}${g.owner===store.uid ? (a&&g.id===a.id ? " · you" : ` · <button class="me" type="button" data-act-as="${esc(g.id)}">edit</button>`) : ""}</small></span>
         <span class="pill ${k}">${k==="yes"?"✓":k==="maybe"?"?":"✕"}</span>
         ${canEdit(g.owner)?`<button class="x" data-del-guest="${esc(g.id)}" aria-label="Remove ${esc(g.name)}">✕</button>`:""}
       </li>`).join("") + `</ul>`;
@@ -603,21 +710,26 @@ function renderGuests(){
 
 function extraRow(i){
   const del = canEdit(i.owner) ? `<button class="x" data-del-item="${esc(i.id)}" aria-label="Delete ${esc(i.label)}">✕</button>` : "";
-  return `<li class="claimed"><span class="chk">✓</span><span class="lbl">${esc(i.label)}<small>from ${esc(i.ownerName)}${i.owner===store.uid?" (you)":""}</small></span>${del}</li>`;
+  const mine = i.owner===store.uid, a = active();
+  const tag = mine ? (hhOf(i,"owner")===a?.id ? " (you)" : " (added from this phone)") : "";
+  return `<li class="claimed"><span class="chk">✓</span><span class="lbl">${esc(i.label)}<small>from ${esc(nameOfHH(i, i.ownerName))}${tag}</small></span>${del}</li>`;
 }
 
 function needRow(i){
   const cs = contribsFor(i.id), state = needState(i);
-  const mine = cs.find(c=>c.uid===store.uid);
+  const a = active();
+  const mine = a ? cs.find(c=>c.uid===store.uid && hhOf(c,"uid")===a.id) : null;
   const hasSome = cs.some(c=>c.mode==="some");
   const amt = i.qty ? `<span class="amt">Need: ${esc(i.qty)}</span>` : "";
   const tag = state==="partial" ? `<span class="tag part">Partly covered</span>` : "";
   const sub = state==="open" ? `<small>Needed</small>` : "";
   const list = cs.length ? `<ul class="contribs">${cs.map(c=>{
-      const you = c.uid===store.uid ? " (you)" : "";
+      const own = c.uid===store.uid, isActive = own && a && hhOf(c,"uid")===a.id;
+      const you = isActive ? " (you)" : "";
       const what = c.mode==="all" ? (hasSome ? "is bringing the rest" : "is bringing it") : `is bringing ${esc(c.qty)}`;
-      const x = store.isHost && c.uid!==store.uid ? `<button class="x" data-del-contrib="${esc(c.id)}" aria-label="Remove ${esc(c.name)}'s pledge">✕</button>` : "";
-      return `<li>${c.mode==="all"?"✓":"＋"} ${esc(c.name)}${you} ${what}${x}</li>`;
+      const x = (store.isHost && !own) ? `<button class="x" data-del-contrib="${esc(c.id)}" aria-label="Remove ${esc(cn(c))}'s pledge">✕</button>`
+        : (own && !isActive) ? `<button class="x" data-undo-contrib="${esc(c.id)}" aria-label="Remove ${esc(cn(c))}'s pledge" title="Added from this phone. Tap to remove">✕</button>` : "";
+      return `<li>${c.mode==="all"?"✓":"＋"} ${esc(cn(c))}${you} ${what}${x}</li>`;
     }).join("")}</ul>` : "";
   let acts = "";
   if (mine){
@@ -659,15 +771,15 @@ function renderHost(){
   else line.innerHTML = `<button type="button" id="hostBtn">Host sign-in</button>`;
   $("#hostBtn")?.addEventListener("click", ()=>store.hostSignIn().catch(fail));
   $("#hostOut")?.addEventListener("click", ()=>store.hostSignOut().catch(fail));
-  renderGuests(); renderItems();
+  renderAll();
 }
+function renderAll(){ paintName(); renderGuests(); renderItems(); }
 
 /* ---------- wire up ---------- */
 $("#titleLine").textContent = CONFIG.title;
 $("#dateLine").textContent = CONFIG.dateLine;
 for (const sel of ["#needCat","#extraCat"]) $(sel).innerHTML = CATS.map(([k,e,n])=>`<option value="${k}">${e} ${n}</option>`).join("");
 $("#extraCat").value = "sides";
-paintName();
 
 // falling leaves
 const leafSVG = c => `<svg viewBox="-20 -20 40 40"><path fill="${c}" d="M0-20 L5-8 L14-12 L10-2 L20 0 L10 4 L13 13 L4 9 L0 20 L-4 9 L-13 13 L-10 4 L-20 0 L-10-2 L-14-12 L-5-8 Z"/></svg>`;
@@ -678,24 +790,25 @@ const lf = $("#leafFall");
   s.style.width=s.style.height=(16+(i%3)*6)+"px"; lf.appendChild(s);
 });
 
-document.querySelectorAll(".seg button").forEach(b=>b.addEventListener("click",()=>{
-  status=b.dataset.status; document.querySelectorAll(".seg button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
-}));
+function setStatus(v){ status=v; document.querySelectorAll(".seg button").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.status===v))); }
+document.querySelectorAll(".seg button").forEach(b=>b.addEventListener("click",()=>setStatus(b.dataset.status)));
 const setSize = v => { size=Math.max(1,Math.min(20,v)); $("#sizeOut").textContent=size; };
 $("#sizeDown").onclick=()=>setSize(size-1); $("#sizeUp").onclick=()=>setSize(size+1);
 
 $("#rsvpForm").addEventListener("submit", async e=>{
   e.preventDefault(); if (!store.uid) return toast("Connecting… try again in a sec.");
   const name=$("#rsvpName").value.trim(); if(!name) return;
-  if (!myName){ myName=name; ls.set("tg_name",name); paintName(); }
-  try { await store.setGuest({name,status,size}); toast(status==="yes"?"See you there! 🦃":status==="maybe"?"Got it, hope you can make it!":"We'll miss you! 🧡"); } catch(err){ fail(err) }
+  try {
+    const a = active();
+    if (a) await store.updateGuest(a.id,{name,status,size});
+    else await addHousehold(name,{status,size}); toast(status==="yes"?"See you there! 🦃":status==="maybe"?"Got it, hope you can make it!":"We'll miss you! 🧡"); } catch(err){ fail(err) }
 });
 
 $("#extraForm").addEventListener("submit", async e=>{
   e.preventDefault(); if (!store.uid) return toast("Connecting… try again in a sec.");
   const label=$("#extraLabel").value.trim(); if(!label) return;
-  const name=await needName(); if(!name) return;
-  try { await store.addItem({label,cat:$("#extraCat").value,kind:"extra",owner:store.uid,ownerName:name,claimUid:null,claimName:null}); $("#extraLabel").value=""; toast("Added. Thank you! 🥧"); } catch(err){ fail(err) }
+  const a=await ensureActive(); if(!a) return;
+  try { await store.addItem({label,cat:$("#extraCat").value,kind:"extra",owner:store.uid,hh:a.id,ownerName:a.name,claimUid:null,claimName:null}); $("#extraLabel").value=""; toast("Added. Thank you! 🥧"); } catch(err){ fail(err) }
 });
 
 $("#needForm").addEventListener("submit", async e=>{
@@ -723,8 +836,8 @@ function showAllReminder(item, isRest){
   $("#allComing").textContent = coming; $("#allMaybe").textContent = maybe;
   const notes = [];
   if (item.qty) notes.push(`The host suggests about ${item.qty}.`);
-  const others = contribsFor(item.id).filter(c=>c.mode==="some" && c.uid!==store.uid);
-  if (isRest && others.length) notes.push(`Already coming: ${others.map(c=>`${c.qty} from ${c.name}`).join(", ")}, so you're covering the rest.`);
+  const others = contribsFor(item.id).filter(c=>c.mode==="some" && !(c.uid===store.uid && hhOf(c,"uid")===active()?.id));
+  if (isRest && others.length) notes.push(`Already coming: ${others.map(c=>`${c.qty} from ${cn(c)}`).join(", ")}, so you're covering the rest.`);
   if (!coming && !maybe) notes.push("Nobody has RSVP'd yet, so check back closer to the day.");
   $("#allNote").hidden = !notes.length; $("#allNote").textContent = notes.join(" ");
   openSheet("#allModal");
@@ -741,10 +854,10 @@ let someCtx = null;
 function askSome(item, existing){
   someCtx = { item, existing };
   $("#someItem").textContent = `${item.label.toLowerCase()} are you bringing`;
-  const cs = contribsFor(item.id).filter(c=>c.uid!==store.uid);
+  const cs = contribsFor(item.id).filter(c=>c.id!==existing?.id);
   const parts = [];
   if (item.qty) parts.push(`We need about ${item.qty}.`);
-  if (cs.length) parts.push(`Already pledged: ${cs.map(c=>c.mode==="all"?`the rest from ${c.name}`:`${c.qty} from ${c.name}`).join(", ")}.`);
+  if (cs.length) parts.push(`Already pledged: ${cs.map(c=>c.mode==="all"?`the rest from ${cn(c)}`:`${c.qty} from ${cn(c)}`).join(", ")}.`);
   $("#someHint").textContent = parts.length ? parts.join(" ") : "So others know how much is still needed.";
   $("#someQty").value = existing?.qty || "";
   $("#someSave").textContent = existing ? "Update" : "Save";
@@ -756,7 +869,7 @@ $("#someForm").addEventListener("submit", async e=>{
   const { item, existing } = someCtx; closeSheet("#someModal"); someCtx=null;
   try {
     if (existing) await store.updateContrib(existing.id,{qty});
-    else await store.addContrib({itemId:item.id,name:myName,mode:"some",qty});
+    else { const a = active(); if(!a) return; await store.addContrib({itemId:item.id,hh:a.id,name:a.name,mode:"some",qty}); }
     toast(`Thanks! Put you down for ${qty}. 🙌`);
   } catch(err){ fail(err) }
 });
@@ -776,13 +889,14 @@ document.addEventListener("click", async e=>{
     if (d.bringAll){
       const item = items.find(i=>i.id===d.bringAll); if(!item) return;
       if (contribsFor(item.id).some(c=>c.mode==="all")) return toast("Someone just grabbed that one!");
-      const name = await needName(); if(!name) return;
+      const a = await ensureActive(); if(!a) return;
+      if (contribsFor(item.id).some(c=>c.uid===store.uid && hhOf(c,"uid")===a.id)) return toast(`${a.name} already has a pledge on this one.`);
       const isRest = needState(item)==="partial";
-      await store.addContrib({itemId:item.id,name,mode:"all",qty:""});
+      await store.addContrib({itemId:item.id,hh:a.id,name:a.name,mode:"all",qty:""});
       showAllReminder(item, isRest);
     } else if (d.bringSome){
       const item = items.find(i=>i.id===d.bringSome); if(!item) return;
-      const name = await needName(); if(!name) return;
+      const a = await ensureActive(); if(!a) return;
       askSome(item, null);
     } else if (d.editContrib){
       const c = contribs.find(x=>x.id===d.editContrib); const item = c && items.find(i=>i.id===c.itemId);
@@ -800,9 +914,24 @@ document.addEventListener("click", async e=>{
       const it = items.find(i=>i.id===d.delItem);
       const cs = it?.kind==="need" ? contribsFor(it.id).map(c=>c.id) : [];
       if (await confirmSheet(`Remove “${it?.label}”${cs.length?` and its ${cs.length} pledge${cs.length>1?"s":""}`:""}?`,"Remove")) await store.deleteItem(d.delItem, cs);
+    } else if (d.actAs){
+      setActive(d.actAs); $("#hhModal").classList.remove("open");
+      toast(`Now acting as ${guests.find(g=>g.id===d.actAs)?.name}`);
+      if (t.classList.contains("me")) $("#rsvpForm").scrollIntoView({behavior:"smooth",block:"center"});
+    } else if (d.addHh){
+      await openNameSheet("add");
+    } else if (d.renameHh){
+      const g = guests.find(x=>x.id===d.renameHh); if (g){ $("#hhModal").classList.remove("open"); await openNameSheet("rename", g); }
     } else if (d.delGuest){
-      const g = guests.find(x=>x.id===d.delGuest);
-      if (await confirmSheet(`Remove ${g?.name}'s RSVP?`,"Remove")) await store.deleteGuest(d.delGuest);
+      const g = guests.find(x=>x.id===d.delGuest); if(!g) return;
+      const cs = contribs.filter(c=>(c.hh===g.id) || (!c.hh && c.uid===g.owner && g.owner===store.uid && hhOf(c,"uid")===g.id)).map(c=>c.id);
+      const xs = items.filter(i=>i.kind==="extra" && ((i.hh===g.id) || (!i.hh && i.owner===g.owner && g.owner===store.uid && hhOf(i,"owner")===g.id))).map(i=>i.id);
+      const extra = cs.length+xs.length ? ` This also removes ${cs.length+xs.length} dish${cs.length+xs.length>1?"es":""} they signed up for.` : "";
+      $("#hhModal").classList.remove("open");
+      if (await confirmSheet(`Remove ${g.name}?${extra}`,"Remove")){
+        await store.deleteGuest(g.id, cs, xs);
+        if (g.id===activeId){ activeId=""; ls.set("tg_active",""); }
+      }
     }
   } catch(err){ fail(err) }
 });
@@ -811,12 +940,10 @@ let subscribed = false;
 store.onAuth(()=>{
   if (!subscribed){
     subscribed = true;
-    store.onGuests(list=>{ guests=list; renderGuests(); renderStats(); });
+    store.onGuests(list=>{ guests=list; renderAll(); });
     store.onItems(list=>{ items=list; renderItems(); });
     store.onContribs(list=>{ contribs=list; renderItems(); });
   }
-  const mine = guests.find(g=>g.id===store.uid);
-  if (mine){ status=mine.status; setSize(mine.size||1); }
   renderHost();
 });
 </script>
